@@ -12,8 +12,13 @@ const server = net.createServer((socket) => {
     const request = data.toString();
 
     console.log("Received request: " + request);
+    
+    const pathMatch = request.match(/\w+(?= HTTP\/1\.1)/);
 
-    const response = "HTTP/1.1 200 OK\r\n\r\n";
+    let response = "HTTP/1.1 200 OK\r\n\r\n"
+    if(pathMatch) {
+        response = "HTTP/1.1 404 Not Found\r\n\r\n";
+    }
 
     socket.write(response);
     socket.end();
