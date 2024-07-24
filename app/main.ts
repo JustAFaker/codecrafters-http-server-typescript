@@ -10,14 +10,17 @@ const server = net.createServer((socket) => {
   });
   socket.on("data", (data) => {
     const request = data.toString();
-
-    console.log("Received request: " + request);
     
-    const pathMatch = request.match(/\w+(?= HTTP\/1\.1)/);
+    const regex = /^GET (\/|\/echo\/([^\/\s]+))(?=\s+HTTP\/1)/;
+    const match = request.match(regex);
 
-    let response = "HTTP/1.1 200 OK\r\n\r\n"
-    if(pathMatch) {
-        response = "HTTP/1.1 404 Not Found\r\n\r\n";
+    let response = "HTTP/1.1 404 Not Found\r\n\r\n";
+    if (match) {
+        if (match[1] === '/') {
+            response = "HTTP/1.1 200 OK\r\n\r\n"
+        } else if (match[2]) {
+            response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + match[2].length + "\r\n\r\n" + match[2];
+        }
     }
 
     socket.write(response);
