@@ -1,15 +1,24 @@
 import * as net from "net";
-import { join } from 'path';
+import path, { join } from 'path';
 import { promises as fs } from 'fs';
 
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
 
 const FILE_NOT_FOUND = "File not found";
-const FAIL = "HTTP/1.1 404 Not Found\r\n\r\n"
+const FAIL = "HTTP/1.1 404 Not Found\r\n\r\n";
+const CREATED = "HTTP/1.1 201 Created\r\n\r\n";
 const SUCCESS =  "HTTP/1.1 200 OK\r\n\r\n";
 const SUCCESS_PLAIN = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ";
 const SUCCESS_OCTET_STREAM = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length:";
+
+enum HttpMethod {
+    GET = 'GET',
+    POST = 'POST',
+    PUT = 'PUT',
+    DELETE = 'DELETE',
+    PATCH = 'PATCH'
+}
 
 async function readFile(filePath: string): Promise<string> {
     try {
@@ -21,16 +30,59 @@ async function readFile(filePath: string): Promise<string> {
     }
 }
 
-// Uncomment this to pass the first stage
-const server = net.createServer((socket) => {
-    const args = process.argv.slice(2);
-    socket.on("close", () => {
-        socket.end();
-    });
-    socket.on("data", async (data) => {
-        const request = data.toString();
-        
-        const regex = /(\/|\/user-agent|\/(echo|files)\/([^\/\s]+))(?=\s+HTTP\/1)/;
+async function writeFile(filePath: string, content: string): Promise<void> {
+    try {
+        // Ensure the directory exists
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+        // Write the file
+        await fs.writeFile(filePath, content, 'utf8');
+
+        console.log(`File successfully written to ${filePath}`);
+    } catch (error) {
+        console.error(`Error writing file: ${error}`);
+        throw error;
+    }
+}
+
+function extractHttpMethod(request: string): string | null {
+    const regex = /^(\w+)/;
+    const match = request.match(regex);
+    return match ? match[1] : null;
+}
+
+
+async function getFailResponse(): Promise<string> {
+    return FAIL;
+}
+
+async function handleRequest(request: string, inputParams: string[]): Promise<string> {
+    const method = extractHttpMethod(request);
+
+    console.log("Method: " + method);
+
+    if (method === null) {
+        return 'Invalid HTTP method';
+    }
+
+    let response: Promise<string>;
+
+    switch (method) {
+        case HttpMethod.GET:
+            response = handleGet(request, inputParams);
+            break;
+        case HttpMethod.POST:
+            response = handlePost(request, inputParams);
+            break;
+        default:
+            response = getFailResponse();
+    }
+
+    return response;
+}
+
+async function handleGet(request: string, inputParams: string[]): Promise<string> {
+    const regex = /(\/|\/user-agent|\/(echo|files)\/([^\/\s]+))(?=\s+HTTP\/1)/;
         const match = request.match(regex);
 
         let response = FAIL;
@@ -43,12 +95,12 @@ const server = net.createServer((socket) => {
                     response = SUCCESS_PLAIN + userAgent[1].length + "\r\n\r\n" + userAgent[1];
                 }
             } else if (match[2] === 'files') {
-                if (args.length === 0) {
+                if (inputParams.length === 0) {
                     console.error('Please provide a directory path');
                 }
                 const fileName = request.match(/\/files\/([^\s]+)/);
                 if(fileName) {
-                    const absolutePath = join(args[1] + fileName[1]);
+                    const absolutePath = join(inputParams[1] + fileName[1]);
                     const content = await readFile(absolutePath);
                     if(content !== FILE_NOT_FOUND) {
                         response = SUCCESS_OCTET_STREAM + content.length + "\r\n\r\n" + content;
@@ -58,6 +110,51 @@ const server = net.createServer((socket) => {
                 response = SUCCESS_PLAIN + match[3].length + "\r\n\r\n" + match[3];
             }
         }
+    
+        return response;
+}
+
+function getHttpRequestBody(request: string): string {
+    const [headersString, ...bodyParts] = request.split('\r\n\r\n');
+    const body = bodyParts.join('\r\n\r\n');
+
+    return body;
+}
+
+async function handlePost(request: string, inputParams: string[]): Promise<string> {
+    let response = FAIL;
+    const requestBody = getHttpRequestBody(request);
+
+    const fileName = request.match(/\/files\/([^\s]+)/);
+    if(fileName) {
+        const absolutePath = join(inputParams[1] + fileName[1]);
+    
+        try {
+            await writeFile(absolutePath, requestBody);
+        } catch (error) {
+            console.error('Failed to write file:', error);
+        }
+
+        response = CREATED;
+    }
+
+    return response;
+}
+
+// Uncomment this to pass the first stage
+const server = net.createServer((socket) => {
+    const inputParams = process.argv.slice(2);
+    socket.on("close", () => {
+        socket.end();
+    });
+    socket.on("data", async (data) => {
+        const request = data.toString();
+
+        console.log("Request: " + request);
+        
+        const response = await handleRequest(request, inputParams);
+
+        console.log("Response: " + response);
 
         socket.write(response);
         socket.end();
