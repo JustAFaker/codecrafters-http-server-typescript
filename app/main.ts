@@ -68,8 +68,6 @@ async function getFailResponse(): Promise<string> {
 async function handleRequest(request: string, inputParams: string[]): Promise<string> {
     const method = extractHttpMethod(request);
 
-    console.log("Method: " + method);
-
     if (method === null) {
         return 'Invalid HTTP method';
     }
@@ -98,8 +96,8 @@ async function handleGet(request: string, inputParams: string[]): Promise<string
         if (match) {
             const encoding = extractAcceptEncoding(request);
             let responseEncoding = "";
-            if(encoding && encoding === "gzip") {
-                responseEncoding = CONTENT_ENCODING + encoding;
+            if(encoding && encoding.includes("gzip")) {
+                responseEncoding = CONTENT_ENCODING + "gzip";
             }
             if (match[1] === '/') {
                 response = SUCCESS + responseEncoding + HEADER_END;
